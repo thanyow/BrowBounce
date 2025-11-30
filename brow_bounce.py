@@ -2,126 +2,185 @@ import cv2
 import mediapipe as mp
 import numpy as np
 import random
-import time
+import os
 
-# --- GAME CONFIGURATION ---
+# --- CONFIGURATION ---
 WINDOW_WIDTH = 640
 WINDOW_HEIGHT = 480
-GRAVITY = 1.5
-JUMP_STRENGTH = -20
-GAME_SPEED = 10       # How fast obstacles move
-OBSTACLE_WIDTH = 40
-OBSTACLE_HEIGHT = 60
-DINO_SIZE = 50
-GROUND_LEVEL = 400    # Y-coordinate of the floor
+GROUND_LEVEL = 400
+GRAVITY = 1.2
+JUMP_POWER = -18
+START_SPEED = 8
+MAX_SPEED = 20
 
-# Sensitivity: Adjust this if it jumps too easily or too hard
-# Higher = Harder to trigger jump
-JUMP_THRESHOLD_RATIO = 1.05 
-# --------------------------
+# Initial Sensitivity (1.05 = 5% brow lift triggers jump)
+DEFAULT_SENSITIVITY = 1.05 
 
-# Initialize MediaPipe Face Mesh
-mp_face_mesh = mp.solutions.face_mesh
-face_mesh = mp_face_mesh.FaceMesh(
-    max_num_faces=1,
-    refine_landmarks=True,
-    min_detection_confidence=0.5,
-    min_tracking_confidence=0.5
-)
+# Visuals
+BALL_RADIUS = 15
+BALL_COLOR = (0, 255, 255) # Yellow
 
-class DinoGame:
+# Save File
+HIGHSCORE_FILE = "highscore.txt"
+# ---------------------
+
+def overlay_image(background, overlay, x, y, size_w, size_h):
+    if overlay is None: return background
+    overlay_resized = cv2.resize(overlay, (size_w, size_h))
+    bg_h, bg_w, _ = background.shape
+    ol_h, ol_w, _ = overlay_resized.shape
+    if x >= bg_w or y >= bg_h: return background
+    if x + ol_w > bg_w: ol_w = bg_w - x
+    if y + ol_h > bg_h: ol_h = bg_h - y
+    if x < 0: ol_w += x; x = 0
+    if y < 0: ol_h += y; y = 0
+    if ol_w <= 0 or ol_h <= 0: return background
+    roi = background[y:y+ol_h, x:x+ol_w]
+    overlay_crop = overlay_resized[:ol_h, :ol_w]
+    if overlay_crop.shape[2] == 4:
+        alpha = overlay_crop[:, :, 3] / 255.0
+        alpha = np.dstack([alpha]*3)
+        fg = overlay_crop[:, :, :3] * alpha
+        bg = roi * (1.0 - alpha)
+        combined = cv2.add(fg, bg)
+        background[y:y+ol_h, x:x+ol_w] = combined
+    else:
+        background[y:y+ol_h, x:x+ol_w] = overlay_crop
+    return background
+
+class ArcadeGame:
     def __init__(self):
-        self.dino_y = GROUND_LEVEL - DINO_SIZE
-        self.dino_velocity = 0
+        self.dino_y = GROUND_LEVEL - (BALL_RADIUS * 2)
+        self.velocity = 0
         self.is_jumping = False
         self.obstacles = []
         self.score = 0
-        self.game_active = False
+        self.speed = START_SPEED
+        self.active = False
         self.game_over = False
-        
-        # Calibration vars
-        self.resting_brow_dist = 0
         self.calibrated = False
+        self.resting_dist = 0
+        self.sensitivity = DEFAULT_SENSITIVITY
+        
+        # Load High Score from file
+        self.high_score = self.load_high_score()
+        
+        self.img_cactus = cv2.imread("assets/cactus.png", cv2.IMREAD_UNCHANGED)
+
+    def load_high_score(self):
+        if not os.path.exists(HIGHSCORE_FILE):
+            return 0
+        try:
+            with open(HIGHSCORE_FILE, "r") as f:
+                return int(f.read())
+        except:
+            return 0
+
+    def save_high_score(self):
+        with open(HIGHSCORE_FILE, "w") as f:
+            f.write(str(self.high_score))
+
+    def reset(self):
+        self.dino_y = GROUND_LEVEL - (BALL_RADIUS * 2)
+        self.velocity = 0
+        self.obstacles = []
+        self.score = 0
+        self.speed = START_SPEED
+        self.active = True
+        self.game_over = False
 
     def jump(self):
         if not self.is_jumping:
-            self.dino_velocity = JUMP_STRENGTH
+            self.velocity = JUMP_POWER
             self.is_jumping = True
 
     def update(self):
-        if not self.game_active: return
-
-        # Apply Gravity
-        self.dino_velocity += GRAVITY
-        self.dino_y += self.dino_velocity
-
-        # Floor Collision
-        if self.dino_y >= GROUND_LEVEL - DINO_SIZE:
-            self.dino_y = GROUND_LEVEL - DINO_SIZE
+        if not self.active: return
+        self.velocity += GRAVITY
+        self.dino_y += self.velocity
+        
+        # Floor collision
+        if self.dino_y >= GROUND_LEVEL - (BALL_RADIUS * 2):
+            self.dino_y = GROUND_LEVEL - (BALL_RADIUS * 2)
             self.is_jumping = False
-            self.dino_velocity = 0
-
+            self.velocity = 0
+            
         # Move Obstacles
         for obs in self.obstacles:
-            obs[0] -= GAME_SPEED # Decrease X coordinate
-
-        # Remove off-screen obstacles and add score
-        if self.obstacles and self.obstacles[0][0] < -OBSTACLE_WIDTH:
+            obs[0] -= self.speed
+            
+        # Clean Obstacles & Score
+        if self.obstacles and self.obstacles[0][0] < -50:
             self.obstacles.pop(0)
             self.score += 1
-
-        # Spawn new obstacles
-        if len(self.obstacles) == 0 or self.obstacles[-1][0] < WINDOW_WIDTH - 250:
-            # Random chance to spawn
-            if random.randint(0, 100) < 5:
-                self.obstacles.append([WINDOW_WIDTH, GROUND_LEVEL - OBSTACLE_HEIGHT])
-
-        # Check Collisions
-        dino_rect = [100, int(self.dino_y), DINO_SIZE, DINO_SIZE] # x, y, w, h
+            if self.score % 5 == 0 and self.speed < MAX_SPEED:
+                self.speed += 1
+                
+        # Spawn logic
+        if len(self.obstacles) == 0 or self.obstacles[-1][0] < WINDOW_WIDTH - random.randint(300, 500):
+            self.obstacles.append([WINDOW_WIDTH, GROUND_LEVEL - 60])
+            
+        # Collision Logic
+        ball_center_x = 80 + BALL_RADIUS
+        ball_center_y = int(self.dino_y) + BALL_RADIUS
         
         for obs in self.obstacles:
-            obs_rect = [obs[0], obs[1], OBSTACLE_WIDTH, OBSTACLE_HEIGHT]
+            ox, oy, ow, oh = int(obs[0]), int(obs[1]), 40, 60
             
-            # AABB Collision Logic (Axis-Aligned Bounding Box)
-            if (dino_rect[0] < obs_rect[0] + obs_rect[2] and
-                dino_rect[0] + dino_rect[2] > obs_rect[0] and
-                dino_rect[1] < obs_rect[1] + obs_rect[3] and
-                dino_rect[1] + dino_rect[3] > obs_rect[1]):
+            if (ball_center_x + BALL_RADIUS > ox and 
+                ball_center_x - BALL_RADIUS < ox + ow and 
+                ball_center_y + BALL_RADIUS > oy and 
+                ball_center_y - BALL_RADIUS < oy + oh):
                 
-                self.game_active = False
+                self.active = False
                 self.game_over = True
+                
+                # Check and Save High Score
+                if self.score > self.high_score:
+                    self.high_score = self.score
+                    self.save_high_score()
+                    print(f"New High Score Saved: {self.high_score}")
 
     def draw(self, img):
-        # Draw Floor
-        cv2.line(img, (0, GROUND_LEVEL), (WINDOW_WIDTH, GROUND_LEVEL), (0, 255, 0), 5)
+        cv2.line(img, (0, GROUND_LEVEL), (WINDOW_WIDTH, GROUND_LEVEL), (200, 200, 200), 2)
 
-        # Draw Dino (Player) - Using a simple yellow square for now
-        cv2.rectangle(img, 
-                     (100, int(self.dino_y)), 
-                     (100 + DINO_SIZE, int(self.dino_y) + DINO_SIZE), 
-                     (0, 255, 255), -1) # Yellow filled
+        # Draw Ball
+        center_x = 80 + BALL_RADIUS
+        center_y = int(self.dino_y) + BALL_RADIUS
+        cv2.circle(img, (center_x, center_y), BALL_RADIUS, BALL_COLOR, -1)
+        cv2.circle(img, (center_x, center_y), BALL_RADIUS, (0,0,0), 2)
 
-        # Draw Obstacles - Red rectangles
+        # Draw Obstacles
         for obs in self.obstacles:
-            cv2.rectangle(img, 
-                         (obs[0], obs[1]), 
-                         (obs[0] + OBSTACLE_WIDTH, obs[1] + OBSTACLE_HEIGHT), 
-                         (0, 0, 255), -1)
+            if self.img_cactus is not None:
+                img = overlay_image(img, self.img_cactus, int(obs[0]), int(obs[1]), 40, 60)
+            else:
+                cv2.rectangle(img, (int(obs[0]), int(obs[1])), (int(obs[0])+40, int(obs[1])+60), (0, 0, 255), -1)
 
-        # Draw Score
-        cv2.putText(img, f"Score: {self.score}", (WINDOW_WIDTH - 150, 50), 
-                   cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        # Draw Scores
+        # Current Score (Big, Top Right)
+        cv2.putText(img, f"{self.score}", (WINDOW_WIDTH-80, 60), cv2.FONT_HERSHEY_SIMPLEX, 1.5, (255, 255, 255), 3)
+        # High Score (Small, below current)
+        cv2.putText(img, f"HI: {self.high_score}", (WINDOW_WIDTH-130, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (200, 200, 200), 2)
 
+        # Draw Sensitivity Debugger (Bottom Right)
+        sens_text = f"SENS: {self.sensitivity:.2f}"
+        cv2.putText(img, sens_text, (WINDOW_WIDTH-140, WINDOW_HEIGHT-20), cv2.FONT_HERSHEY_PLAIN, 1, (0, 255, 255), 1)
+        cv2.putText(img, "[W / S] to adjust", (WINDOW_WIDTH-180, WINDOW_HEIGHT-40), cv2.FONT_HERSHEY_PLAIN, 0.8, (200, 200, 200), 1)
+        
         return img
 
-# Initialize Game
-game = DinoGame()
+# Initialize
+mp_face = mp.solutions.face_mesh
+face_mesh = mp_face.FaceMesh(max_num_faces=1, refine_landmarks=True)
+game = ArcadeGame()
+
 cap = cv2.VideoCapture(0)
 cap.set(3, WINDOW_WIDTH)
 cap.set(4, WINDOW_HEIGHT)
 
-print("Started! Look at the camera.")
-print("Press 'SPACE' to calibrate and start.")
+print("BrowBounce Final Version Loaded.")
+print("Use 'W' (Harder) and 'S' (Easier) to tune sensitivity.")
 
 while True:
     success, img = cap.read()
@@ -130,73 +189,70 @@ while True:
     h, w, _ = img.shape
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     results = face_mesh.process(img_rgb)
-
-    # --- FACE DETECTION & JUMP LOGIC ---
-    if results.multi_face_landmarks:
-        for face_landmarks in results.multi_face_landmarks:
-            lm = face_landmarks.landmark
-            
-            # Get coordinates for Right Eye and Right Eyebrow
-            # ID 159: Right Eye Top
-            # ID 66: Right Eyebrow Mid
-            # 
-            eye_top = lm[159]
-            brow_mid = lm[66]
-            
-            # Calculate distance (only Y axis matters mostly)
-            # Multiply by height to get pixels
-            dist = abs(eye_top.y - brow_mid.y) * h
-            
-            # Draw Face Points for visual feedback
-            cx_eye, cy_eye = int(eye_top.x * w), int(eye_top.y * h)
-            cx_brow, cy_brow = int(brow_mid.x * w), int(brow_mid.y * h)
-            cv2.circle(img, (cx_eye, cy_eye), 3, (0, 255, 0), -1)
-            cv2.circle(img, (cx_brow, cy_brow), 3, (0, 255, 0), -1)
-            cv2.line(img, (cx_eye, cy_eye), (cx_brow, cy_brow), (0, 255, 0), 1)
-
-            # --- GAME TRIGGER ---
-            if game.calibrated and game.game_active:
-                # If current distance is significantly larger than resting distance
-                if dist > game.resting_brow_dist * JUMP_THRESHOLD_RATIO:
-                    game.jump()
-                    cv2.putText(img, "JUMP!", (10, 100), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-            # --- CALIBRATION LOGIC ---
-            if not game.calibrated:
-                cv2.putText(img, "Relax face & press SPACE", (50, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2)
-                cv2.putText(img, f"Current Dist: {int(dist)}", (50, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 1)
-                
-                # Store the distance to use when space is pressed
-                current_calibration_val = dist
-
-    # --- GAME LOOP UPDATES ---
-    if game.game_active:
-        game.update()
-        img = game.draw(img)
-    elif game.game_over:
-        img = game.draw(img) # Draw one last time so we see the crash
-        cv2.putText(img, "GAME OVER", (180, 240), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 255), 3)
-        cv2.putText(img, "Press 'R' to Restart", (190, 300), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 1)
     
-    cv2.imshow("BrowBounce", img)
+    current_dist = 0
 
-    # --- CONTROLS ---
+    if results.multi_face_landmarks:
+        for landmarks in results.multi_face_landmarks:
+            pt_brow = landmarks.landmark[66]
+            pt_nose = landmarks.landmark[1]
+            
+            cx_brow, cy_brow = int(pt_brow.x * w), int(pt_brow.y * h)
+            cx_nose, cy_nose = int(pt_nose.x * w), int(pt_nose.y * h)
+            
+            current_dist = abs(cy_nose - cy_brow)
+
+    # --- LOGIC ---
+    if game.calibrated:
+        threshold = game.resting_dist * game.sensitivity
+        
+        # Jump Bar
+        bar_height = int(current_dist * 2)
+        thresh_height = int(threshold * 2)
+        
+        cv2.line(img, (10, 400 - thresh_height), (30, 400 - thresh_height), (0, 0, 255), 2)
+        color = (255, 255, 255)
+        if current_dist > threshold:
+            color = (0, 255, 0)
+        cv2.rectangle(img, (15, 400 - bar_height), (25, 400), color, -1)
+
+        if current_dist > threshold:
+             game.jump()
+
+        if game.active:
+            game.update()
+        elif game.game_over:
+            overlay = img.copy()
+            cv2.rectangle(overlay, (150, 150), (490, 330), (0, 0, 0), -1)
+            img = cv2.addWeighted(overlay, 0.6, img, 0.4, 0)
+            cv2.putText(img, "GAME OVER", (190, 210), cv2.FONT_HERSHEY_TRIPLEX, 1.5, (0, 0, 255), 2)
+            cv2.putText(img, f"Score: {game.score}", (260, 260), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 1)
+            cv2.putText(img, "Press [R] to Retry", (210, 300), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (200, 200, 200), 1)
+    else:
+        cv2.putText(img, "RELAX FACE", (220, 200), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)
+        cv2.putText(img, "PRESS SPACE", (210, 250), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+        cv2.putText(img, f"Raw Dist: {int(current_dist)}", (50, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 255, 100), 1)
+
+    img = game.draw(img)
+    cv2.imshow("BrowBounce Final", img)
+    
     key = cv2.waitKey(1) & 0xFF
     if key == ord('q'):
         break
-    elif key == ord(' ') and not game.calibrated:
-        game.resting_brow_dist = current_calibration_val
-        game.calibrated = True
-        game.game_active = True
-        print(f"Calibrated! Resting distance: {game.resting_brow_dist}")
+    elif key == ord(' '):
+        if not game.calibrated:
+            game.resting_dist = current_dist
+            game.calibrated = True
+            game.reset()
     elif key == ord('r') and game.game_over:
-        # Reset game
-        game.dino_y = GROUND_LEVEL - DINO_SIZE
-        game.dino_velocity = 0
-        game.obstacles = []
-        game.score = 0
-        game.game_active = True
-        game.game_over = False
+        game.reset()
+    
+    # Tuning Controls (W/S are safer than arrows)
+    elif key == ord('w'): # Harder
+        game.sensitivity += 0.01
+    elif key == ord('s'): # Easier
+        game.sensitivity -= 0.01
+        if game.sensitivity < 1.01: game.sensitivity = 1.01
 
 cap.release()
 cv2.destroyAllWindows()

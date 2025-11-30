@@ -1,4 +1,4 @@
-# 🤨 BrowBounce (V1)
+# 🤨 BrowBounce (V2)
 
 > **The game where you jump by raising your eyebrows.**
 
