@@ -13,7 +13,7 @@
 
 1.  **Clone the repo**
     ```bash
-    git clone https://github.com//BrowBounce.git
+    git clone https://github.com/thanyow/BrowBounce.git
     cd BrowBounce
     ```
 
