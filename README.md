@@ -1,13 +1,23 @@
-# 🤨 BrowBounce (V2)
+# 🤨 BrowBounce (V3)
 
-> **The game where you jump by raising your eyebrows.**
+> **A hands-free cyberpunk arcade platformer controlled by your face.**
 
-**BrowBounce** is a hands-free arcade game powered by Computer Vision. It uses **MediaPipe Face Mesh** to track the distance between your eye and eyebrow in real-time. When you look surprised, the character jumps!
+**BrowBounce** turns your webcam into a game controller. Using **MediaPipe Face Mesh**, it tracks the micro-movements of your eyebrows to control a neon orb jumping over obstacles.
+
+This project features a custom-built game engine with gravity, collision detection, and a procedural "Glassmorphism" UI rendered entirely in OpenCV.
 
 ## ✨ Features
-* **Face Control:** No keyboard needed—just your facial expressions.
-* **Auto-Calibration:** Adjusts to your specific face shape.
-* **Real-time Physics:** Gravity and collision detection built from scratch.
+
+### 🕹️ Gameplay
+* **Face Control:** Jump by raising your eyebrows (or flexing your nose muscles).
+* **Dynamic Difficulty:** The game speeds up as you survive longer.
+* **Persistent High Scores:** Saves your best run to disk automatically.
+
+### 🎨 Visuals (Neon Mode)
+* **Procedural Graphics:** No external assets needed—everything is drawn with code.
+* **Heads-Up Display (HUD):** Features a live Speedometer, Jump Pressure Gauge, and Scoreboard.
+* **Motion Trails:** The player leaves a fading cyan trail for a fluid feel.
+* **Cyberpunk Aesthetic:** Darkened camera feed with Cyan/Magenta glowing elements.
 
 ## 🛠️ Installation
 
@@ -24,19 +34,35 @@
 
 3.  **Run the game**
     ```bash
-    python brow_bounce.py
+    python brow_bounce_hud.py
     ```
 
-## 🎮 How to Play
+## 🎮 Controls
 
-1.  **Launch the game.** You will see your camera feed with green dots on your face.
-2.  **CALIBRATE:** Relax your face (don't smile or frown) and press **SPACE**.
-3.  **PLAY:** The yellow box will start running.
-4.  **JUMP:** Raise your eyebrows high (look surprised!) to jump over the red obstacles.
-5.  **RESTART:** If you crash, press **'R'** to try again.
+| Key | Action |
+| :--- | :--- |
+| **`SPACE`** | **Calibrate & Start** (Relax face first!) |
+| **`Eyebrows`**| **JUMP** (Raise them high!) |
+| **`W`** | **Decrease Sensitivity** (Make it harder to jump) |
+| **`S`** | **Increase Sensitivity** (Make it easier to jump) |
+| **`R`** | **Restart** (After Game Over) |
+| **`Q`** | **Quit** |
 
 ## ⚙️ How it Works
-The script calculates the vertical distance between **Face Landmark 159** (Top of Eye) and **Landmark 66** (Eyebrow). If this distance exceeds your calibrated "resting" distance by a specific threshold (1.05x), a jump is triggered.
+
+1.  **Face Tracking:** Calculates the pixel distance between your **Nose Tip** (Landmark 1) and **Mid-Eyebrow** (Landmark 66).
+2.  **Calibration:** When you press SPACE, it records your "Resting Distance."
+3.  **Trigger Logic:** If `Current Distance > Resting Distance * Sensitivity`, a jump occurs.
+4.  **Rendering:** Uses `cv2.addWeighted` to create transparent "glass" overlays for the UI panels.
+
+## 📂 Files
+* `brow_bounce_hud.py`: The main game script.
+* `highscore.txt`: Automatically created to save your best score.
+
+## 🤝 Contributing
+Pull requests are welcome! Ideas for future updates:
+* Add power-ups (slow motion, shields).
+* Add sound effects (using `playsound` library).
 
 ## 📜 License
 MIT License.
