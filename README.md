@@ -1,6 +1,6 @@
 # 🤨 BrowBounce (V3)
 
-> **A hands-free cyberpunk arcade platformer controlled by your face.**
+> **A hands-free arcade platformer controlled by your face.**
 
 **BrowBounce** turns your webcam into a game controller. Using **MediaPipe Face Mesh**, it tracks the micro-movements of your eyebrows to control a neon orb jumping over obstacles.
 
