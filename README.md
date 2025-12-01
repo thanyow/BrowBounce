@@ -4,12 +4,12 @@
 
 **BrowBounce** turns your webcam into a game controller. Using **MediaPipe Face Mesh**, it tracks the micro-movements of your eyebrows to control a neon orb jumping over obstacles.
 
-This project features a custom-built game engine with gravity, collision detection, and a procedural "Glassmorphism" UI rendered entirely in OpenCV.
+This project features a custom-built game engine with gravity, and collision detection.
 
 ## ✨ Features
 
 ### 🕹️ Gameplay
-* **Face Control:** Jump by raising your eyebrows (or flexing your nose muscles).
+* **Face Control:** Jump by raising your eyebrows.
 * **Dynamic Difficulty:** The game speeds up as you survive longer.
 * **Persistent High Scores:** Saves your best run to disk automatically.
 
